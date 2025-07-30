@@ -1,80 +1,119 @@
-import matplotlib.pyplot as plt
-import matplotlib.dates as mdates
+import plotly.graph_objects as go
 import pandas as pd
-from datetime import datetime
+from datetime import timedelta, datetime
 
-def visualize_schedule(start_times, time_slots, sessions_df, room_assignments=None, instructor_assignments=None):
-    fig, ax = plt.subplots(figsize=(24, 16)) 
+def visualize_schedule(
+    start_times,
+    time_slots,
+    sessions_df,
+    room_assignments=None,
+    instructor_assignments=None,
+    group_training=None,
+    groups=None,
+):
     sessions_df = sessions_df.set_index("Session ID")
+    slot_to_dt = {i: ts for i, ts in enumerate(time_slots)}
 
-    slot_to_time = {i: ts for i, ts in enumerate(time_slots)}
-    session_rects = []
+    def time_to_minutes(t):
+        return t.hour * 60 + t.minute
 
-    # Build metadata per session
+    all_dates = pd.date_range(time_slots[0].date(), time_slots[-1].date(), freq="D")
+    date_strs = [d.strftime("%Y-%m-%d") for d in all_dates]
+
+    bars = []
+
     for sid, start_idx in start_times.items():
         session = sessions_df.loc[sid]
-        duration_minutes = session["Duration (mins)"]
-        duration_slots = duration_minutes // 30
-        start_time = slot_to_time[start_idx]
-        end_time = start_time + pd.Timedelta(minutes=duration_minutes)
+        start_dt = slot_to_dt[start_idx]
+        duration_mins = int(session["Duration (mins)"])
+        end_dt = start_dt + timedelta(minutes=duration_mins)
 
-        instructors = (
-            ", ".join(instructor_assignments[instructor_assignments["Session ID"] == sid]["Instructor ID"].unique())
-            if instructor_assignments is not None else "N/A"
-        )
+        date_str = start_dt.strftime("%Y-%m-%d")
 
-        session_rects.append({
-            "sid": sid,
-            "start_time": start_time,
-            "end_time": end_time,
-            "duration_slots": duration_slots,
-            "session_name": session["Session Name"],
-            "room": room_assignments.get(sid, "Virtual") if room_assignments else "Virtual",
-            "instructors": instructors
-        })
+        room = room_assignments.get(sid, "Virtual") if room_assignments else "Virtual"
 
-    y_labels = pd.date_range("2000-01-01 09:00", "2000-01-01 12:00", freq="30min").time
-    y_positions = {t: i for i, t in enumerate(y_labels)}
+        if instructor_assignments is not None:
+            instructors = ", ".join(
+                instructor_assignments[instructor_assignments["Session ID"] == sid]["Instructor ID"].unique()
+            )
+        else:
+            instructors = "N/A"
 
-    # Plot each session
-    for rect in session_rects:
-        day = rect["start_time"].date()
-        time = rect["start_time"].time()
-        start_y = y_positions[time]
-        bar_y = start_y - 0.4
-        bar_height = rect["duration_slots"]
+        group_label = ""
+        if group_training is not None and groups is not None:
+            gids = group_training[group_training["Session ID"] == sid]["Group ID"].unique()
+            if "Group Name" in groups.columns:
+                group_names = groups[groups["Group ID"].isin(gids)]["Group Name"].tolist()
+                group_label = ", ".join(group_names)
+            else:
+                group_label = ", ".join(map(str, gids))
 
-        ax.broken_barh(
-            [(float(mdates.date2num(day)), 0.8)],
-            (bar_y, bar_height),
-            facecolors="tab:blue",
-            edgecolors="black"
-        )
+        bars.append(dict(
+            x=date_str,
+            y=duration_mins,
+            base=time_to_minutes(start_dt.time()),
+            text=f"<b>{session['Session Name']}</b><br>Room: {room}<br>Instructors: {instructors}<br>Groups: {group_label}",
+            hoverinfo="text",
+        ))
 
-        label = f"{rect['session_name']}\nRoom: {rect['room']}\nInstructor(s): {rect['instructors']}"
-        ax.text(
-            float(mdates.date2num(day)) + 0.05,
-            bar_y + bar_height / 2,
-            label,
-            va="center",
-            ha="left",
-            fontsize=10,
-            color="black",
-            bbox=dict(boxstyle="round,pad=0.2", facecolor="white", edgecolor="none", alpha=0.8)
-        )
+    fig = go.Figure()
+    for bar in bars:
+        fig.add_trace(go.Bar(
+            x=[bar["x"]],
+            y=[bar["y"]],
+            base=[bar["base"]],
+            width=0.8,
+            text=[bar["text"]],
+            textposition="inside",
+            marker_color="lightblue",
+            orientation='v',
+            hoverinfo="text",
+            name=""
+        ))
 
-    all_dates = sorted({ts.date() for ts in time_slots})
-    ax.set_xticks([float(mdates.date2num(d)) for d in all_dates])
-    ax.set_xticklabels([d.strftime("%m-%d") for d in all_dates], rotation=90)
-    ax.xaxis.set_major_locator(mdates.DayLocator())
-    ax.xaxis.set_major_formatter(mdates.DateFormatter("%m-%d"))
+    visible_range = 7
 
-    ax.set_yticks(range(len(y_labels)))
-    ax.set_yticklabels([t.strftime("%H:%M") for t in y_labels])
-    ax.set_ylabel("Time of Day")
-    ax.set_xlabel("Date")
-    ax.set_title("Training Session Schedule")
-    ax.grid(True, axis="both", linestyle="--", linewidth=0.5)
+    fig.update_layout(
+        title="Training Schedule",
+        height=600,
+        width=1000,  
+        dragmode='pan',  
+        barmode='overlay',
+        bargap=0.2,
+        plot_bgcolor="white",
+        paper_bgcolor="white",
+        xaxis=dict(
+            title="Date",
+            type="category",
+            categoryorder="array",
+            categoryarray=date_strs,
+            tickangle=45,
+            tickmode='array',
+            tickvals=date_strs,
+            range=[0, min(visible_range, len(date_strs))], 
+            showgrid=True,
+            gridcolor="black",
+            linecolor="black",
+            ticks="outside",
+            tickfont=dict(color="black"),
+            fixedrange=False
+        ),
+        yaxis=dict(
+            title="Time of Day",
+            tickvals=[i for i in range(9 * 60, 17 * 60 + 1, 30)],
+            ticktext=[
+                (datetime.strptime("09:00", "%H:%M") + timedelta(minutes=i)).strftime("%I:%M %p")
+                for i in range(0, (17 - 9) * 60 + 1, 30)
+            ],
+            range=[9 * 60, 17 * 60],
+            autorange=False,
+            showgrid=True,
+            gridcolor="black",
+            linecolor="black",
+            ticks="outside",
+            tickfont=dict(size=10, color="black"),
+        ),
+        showlegend=False
+    )
 
-    plt.tight_layout()
-    plt.show()
+    fig.write_html("schedule_vis.html", auto_open=True)

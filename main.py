@@ -8,7 +8,6 @@ from src.visualizer import visualize_schedule
 
 from ortools.linear_solver import pywraplp
 
-# Generate time slots: every 30 min from 9:00 to 12:00 M–F for 30 days
 def generate_time_slots(start_date, num_days=30):
     time_slots = []
     current = start_date
@@ -100,10 +99,19 @@ if __name__ == "__main__":
             print(f"\nSession {sid} ({sessions_df.loc[sid]['Session Name']}):")
             reasons = explain_schedule_decision(sid, scheduled_starts, data, room_assignments)
             for r in reasons:
-                print("•", r)
+                print("-", r)
 
         # Visualization of the schedule
-        visualize_schedule(scheduled_starts, time_slots, data["sessions"], room_assignments)
+        visualize_schedule(
+            start_times=scheduled_starts,         
+            time_slots=time_slots,                 
+            sessions_df=data["sessions"],          
+            room_assignments=room_assignments,    
+            instructor_assignments=data["instructor_assignments"],  
+            group_training=data.get("group_training"),              
+            groups=data.get("groups"),                               
+        )
+
 
     else:
         print("No feasible schedule found.")
