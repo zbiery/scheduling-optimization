@@ -2,7 +2,7 @@ import pandas as pd
 from datetime import datetime, timedelta
 
 from src.data_loader import load_data
-from src.model import build_milp_model
+from src.model import build_model
 from src.solver import solve
 from src.visualizer import visualize_schedule
 
@@ -63,12 +63,12 @@ def explain_schedule_decision(sid, scheduled_starts, data, room_assignments):
     return reasons
 
 if __name__ == "__main__":
-    excel_path = "data/Onboarding_Data.xlsx"
-    data = load_data(excel_path)
+    data_path = "data/Onboarding_Data.xlsx"
+    data = load_data(data_path)
 
     time_slots = generate_time_slots(datetime(2025, 8, 1))
 
-    solver, start_time_vars, room_vars = build_milp_model(data, time_slots)
+    solver, start_time_vars, room_vars = build_model(data, time_slots)
     solver, status = solve(solver)
 
     if status in [pywraplp.Solver.OPTIMAL, pywraplp.Solver.FEASIBLE]:
@@ -93,7 +93,6 @@ if __name__ == "__main__":
             room = room_assignments.get(sid, "Virtual")
             print(f"{sid: <12} | {session['Session Name']: <20} | {room: <10} | {start_time.strftime('%Y-%m-%d %H:%M')} - {end_time.strftime('%H:%M')}")
 
-        # Display rationale for each session
         print("\nSchedule Explanations:")
         for sid in sorted(scheduled_starts, key=lambda s: scheduled_starts[s]):
             print(f"\nSession {sid} ({sessions_df.loc[sid]['Session Name']}):")
@@ -101,7 +100,6 @@ if __name__ == "__main__":
             for r in reasons:
                 print("-", r)
 
-        # Visualization of the schedule
         visualize_schedule(
             start_times=scheduled_starts,         
             time_slots=time_slots,                 
